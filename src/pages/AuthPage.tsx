@@ -157,7 +157,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-[85vh] flex flex-col justify-center items-center px-4 py-8 max-w-md mx-auto w-full animate-in fade-in duration-300">
+    <div className="w-full flex flex-col justify-start sm:justify-center items-center px-2 py-4 max-w-md mx-auto animate-in fade-in duration-300">
       {/* Brand Hero */}
       <div className="text-center mb-6 w-full">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[var(--teal-subtle)] text-[var(--teal-primary)] mb-3 shadow-xs border border-[var(--teal-primary)]/20">

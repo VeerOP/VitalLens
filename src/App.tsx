@@ -84,8 +84,8 @@ export function App() {
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen flex flex-col justify-center bg-[var(--bg-app)] text-[var(--text-primary)] transition-colors px-4 pt-safe pb-safe">
-        <main className="w-full max-w-md mx-auto my-auto">
+      <div className="min-h-screen w-full flex flex-col justify-start sm:justify-center bg-[var(--bg-app)] text-[var(--text-primary)] transition-colors px-4 py-8 pt-safe pb-safe overflow-y-auto">
+        <main className="w-full max-w-md mx-auto my-auto py-4">
           <AuthPage onLoginSuccess={(user) => setCurrentUser(user)} />
         </main>
       </div>
@@ -93,7 +93,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-[var(--bg-app)] text-[var(--text-primary)] transition-colors">
+    <div className="min-h-screen w-full flex flex-col justify-between bg-[var(--bg-app)] text-[var(--text-primary)] transition-colors overflow-x-hidden">
       {/* Safe Area Aware Top Header */}
       <Navbar
         activeTab={activeTab}
@@ -102,8 +102,8 @@ export function App() {
         onLogout={handleLogout}
       />
 
-      {/* Main Content Viewport (Mobile-first iPhone layout) */}
-      <main className="flex-1 w-full max-w-2xl mx-auto px-4 pt-3 pb-24 md:pb-8 overflow-x-hidden min-w-0">
+      {/* Main Content Viewport (Mobile-first responsive layout) */}
+      <main className="flex-1 w-full max-w-2xl mx-auto px-4 pt-3 pb-28 md:pb-8 overflow-x-hidden min-w-0">
         {/* Safari Add to Home Screen PWA Helper Banner */}
         <PwaInstallBanner />
         {activeTab === 'home' && (
