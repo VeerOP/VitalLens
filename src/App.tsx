@@ -13,6 +13,9 @@ import { HealthAssistant } from './pages/HealthAssistant';
 import { ReadinessPage } from './pages/ReadinessPage';
 import { DailyJournalPage } from './pages/DailyJournalPage';
 import { MedicationsPage } from './pages/MedicationsPage';
+import { AuthPage } from './pages/AuthPage';
+import { getCurrentUser, logoutUser, subscribeAuth } from './lib/storage/authStore';
+import type { AuthUser } from './lib/storage/authStore';
 import type { VitalsContext } from './lib/ai/healthBotEngine';
 import { HeartPulse } from 'lucide-react';
 
@@ -31,6 +34,7 @@ const VALID_TABS: TabType[] = [
 ];
 
 export function App() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getCurrentUser());
   const [activeTab, setActiveTabState] = useState<TabType>(() => {
     const hash = window.location.hash.replace('#', '') as TabType;
     return VALID_TABS.includes(hash) ? hash : 'home';
@@ -42,6 +46,18 @@ export function App() {
     if (window.location.hash.replace('#', '') !== tab) {
       window.location.hash = tab;
     }
+  };
+
+  useEffect(() => {
+    const unsub = subscribeAuth((user) => {
+      setCurrentUser(user);
+    });
+    return unsub;
+  }, []);
+
+  const handleLogout = () => {
+    logoutUser();
+    setCurrentUser(null);
   };
 
   useEffect(() => {
@@ -66,10 +82,25 @@ export function App() {
     setActiveTab('assistant');
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen flex flex-col justify-center bg-[var(--bg-app)] text-[var(--text-primary)] transition-colors px-4 pt-safe pb-safe">
+        <main className="w-full max-w-md mx-auto my-auto">
+          <AuthPage onLoginSuccess={(user) => setCurrentUser(user)} />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col justify-between bg-[var(--bg-app)] text-[var(--text-primary)] transition-colors">
       {/* Safe Area Aware Top Header */}
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Navbar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+      />
 
       {/* Main Content Viewport (Mobile-first iPhone layout) */}
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 pt-3 pb-24 md:pb-8 overflow-x-hidden min-w-0">
@@ -77,6 +108,7 @@ export function App() {
         <PwaInstallBanner />
         {activeTab === 'home' && (
           <Home
+            currentUser={currentUser}
             onStartFingertipScan={() => setActiveTab('scan-finger')}
             onStartFaceScan={() => setActiveTab('scan-face')}
             onViewHistory={() => setActiveTab('history')}
@@ -127,7 +159,13 @@ export function App() {
           />
         )}
 
-        {activeTab === 'settings' && <Settings onBack={() => setActiveTab('home')} />}
+        {activeTab === 'settings' && (
+          <Settings
+            onBack={() => setActiveTab('home')}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+          />
+        )}
 
         {activeTab === 'about' && <About onBack={() => setActiveTab('home')} />}
 

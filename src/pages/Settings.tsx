@@ -1,13 +1,26 @@
 import React, { useState } from 'react';
 import { clearAllScanHistory } from '../lib/storage/historyStore';
-import { Settings as SettingsIcon, Trash2, Check, Key, ShieldCheck, ArrowLeft } from 'lucide-react';
+import {
+  Settings as SettingsIcon,
+  Trash2,
+  Check,
+  Key,
+  ShieldCheck,
+  ArrowLeft,
+  User,
+  LogOut,
+  BadgeCheck,
+} from 'lucide-react';
 import { triggerHaptic } from '../lib/utils/haptics';
+import type { AuthUser } from '../lib/storage/authStore';
 
 interface SettingsProps {
   onBack: () => void;
+  currentUser?: AuthUser | null;
+  onLogout?: () => void;
 }
 
-export const Settings: React.FC<SettingsProps> = ({ onBack }) => {
+export const Settings: React.FC<SettingsProps> = ({ onBack, currentUser, onLogout }) => {
   const [cleared, setCleared] = useState(false);
   const [geminiKey, setGeminiKey] = useState<string>(() => {
     return localStorage.getItem('vitallens_gemini_key') || '';
@@ -45,6 +58,64 @@ export const Settings: React.FC<SettingsProps> = ({ onBack }) => {
           <span>Settings</span>
         </h1>
       </div>
+
+      {/* 0. Account Profile & Session Management */}
+      {currentUser && (
+        <div className="clinical-card p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+              <User className="w-4 h-4 text-[var(--teal-primary)] stroke-[2]" />
+              <span>Active Account Session</span>
+            </h3>
+            <span className="text-[10px] font-semibold bg-[var(--teal-subtle)] text-[var(--teal-primary)] px-2 py-0.5 rounded-full border border-[var(--teal-primary)]/20">
+              Authenticated
+            </span>
+          </div>
+
+          <div className="p-3 bg-[var(--bg-surface-subtle)] rounded-lg border border-[var(--border-color)]">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-[var(--teal-subtle)] text-[var(--teal-primary)] font-bold text-base flex items-center justify-center border border-[var(--teal-primary)]/30 shrink-0">
+                {currentUser.avatarInitials}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-[var(--text-primary)] truncate">
+                    {currentUser.fullName}
+                  </h4>
+                  <span className="text-[10px] font-medium text-[var(--teal-primary)] bg-white px-1.5 py-0.5 rounded border border-[var(--border-color)]">
+                    {currentUser.role}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5 truncate">
+                  @{currentUser.username} {currentUser.email ? `• ${currentUser.email}` : ''}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3 pt-2.5 border-t border-[var(--border-color)] flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                <BadgeCheck className="w-3.5 h-3.5 text-[var(--teal-primary)] stroke-[2]" />
+                <span>Encrypted local session</span>
+              </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    if (window.confirm('Are you sure you want to log out?')) {
+                      onLogout();
+                    }
+                  }}
+                  className="clinical-btn-secondary min-h-[34px] px-3 py-1 text-xs text-[var(--status-alert)] border-[var(--border-color)] hover:bg-[var(--status-alert-bg)] shrink-0 cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5 stroke-[2]" />
+                  <span>Log Out</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 1. AI Assistant Configuration */}
       <div className="clinical-card p-4 space-y-3">

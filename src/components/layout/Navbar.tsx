@@ -7,8 +7,10 @@ import {
   Bot,
   Settings,
   HelpCircle,
+  LogOut,
 } from 'lucide-react';
 import { triggerHaptic } from '../../lib/utils/haptics';
+import type { AuthUser } from '../../lib/storage/authStore';
 
 export type TabType =
   | 'home'
@@ -26,9 +28,16 @@ export type TabType =
 interface NavbarProps {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
+  currentUser?: AuthUser | null;
+  onLogout?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  activeTab,
+  setActiveTab,
+  currentUser,
+  onLogout,
+}) => {
   const handleTabClick = (tab: TabType) => {
     triggerHaptic('light');
     setActiveTab(tab);
@@ -123,6 +132,19 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
           {/* Right Header Controls */}
           <div className="flex items-center gap-1.5">
+            {currentUser && (
+              <button
+                onClick={() => handleTabClick('settings')}
+                className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[var(--bg-surface-subtle)] border border-[var(--border-color)] text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                title={`Logged in as ${currentUser.fullName} (${currentUser.username})`}
+              >
+                <div className="w-5 h-5 rounded-full bg-[var(--teal-subtle)] text-[var(--teal-primary)] text-[10px] font-bold flex items-center justify-center">
+                  {currentUser.avatarInitials}
+                </div>
+                <span className="truncate max-w-[80px]">{currentUser.username}</span>
+              </button>
+            )}
+
             <button
               onClick={() => handleTabClick('settings')}
               className={`p-2 rounded-lg border transition-colors cursor-pointer flex items-center justify-center ${
@@ -135,6 +157,22 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             >
               <Settings className="w-4 h-4 stroke-[1.8]" />
             </button>
+
+            {onLogout && (
+              <button
+                onClick={() => {
+                  triggerHaptic('light');
+                  if (window.confirm('Log out of VitalLens?')) {
+                    onLogout();
+                  }
+                }}
+                className="p-2 rounded-lg bg-[var(--bg-surface-subtle)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--status-alert)] hover:border-[var(--status-alert)]/30 transition-colors cursor-pointer flex items-center justify-center"
+                title="Log Out"
+                aria-label="Log Out"
+              >
+                <LogOut className="w-4 h-4 stroke-[1.8]" />
+              </button>
+            )}
           </div>
         </div>
       </header>

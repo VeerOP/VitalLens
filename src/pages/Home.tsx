@@ -19,8 +19,10 @@ import { MedicationTrackerCard } from '../components/health/MedicationTrackerCar
 import { CircadianPromptsCard } from '../components/health/CircadianPromptsCard';
 import { calculateHealthReadiness, getTodayHealthLog } from '../lib/storage/dailyLogStore';
 import { triggerHaptic } from '../lib/utils/haptics';
+import type { AuthUser } from '../lib/storage/authStore';
 
 interface HomeProps {
+  currentUser?: AuthUser | null;
   onStartFingertipScan: () => void;
   onStartFaceScan: () => void;
   onViewHistory: () => void;
@@ -33,6 +35,7 @@ interface HomeProps {
 }
 
 export const Home: React.FC<HomeProps> = ({
+  currentUser,
   onStartFingertipScan,
   onStartFaceScan,
   onViewHistory,
@@ -101,7 +104,7 @@ export const Home: React.FC<HomeProps> = ({
             {todayStr}
           </span>
           <h1 className="text-xl font-bold tracking-tight text-[var(--text-primary)] truncate">
-            {getGreeting()}
+            {getGreeting()}{currentUser ? `, ${currentUser.fullName.split(' ')[0]}` : ''}
           </h1>
         </div>
 
