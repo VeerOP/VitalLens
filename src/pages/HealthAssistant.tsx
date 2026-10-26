@@ -10,10 +10,18 @@ import {
   AlertTriangle,
   Info,
   Key,
+  Sparkles,
+  RefreshCw,
+  XCircle,
 } from 'lucide-react';
-import { getBotResponse } from '../lib/ai/healthBotEngine';
+import {
+  getBotResponse,
+  validateGeminiKey,
+  cleanGeminiKey,
+} from '../lib/ai/healthBotEngine';
 import type { ChatMessage, VitalsContext } from '../lib/ai/healthBotEngine';
 import { triggerHaptic } from '../lib/utils/haptics';
+import { ChatFormattedText } from '../components/chat/ChatFormattedText';
 
 interface HealthAssistantProps {
   onBack: () => void;
@@ -26,6 +34,10 @@ export const HealthAssistant: React.FC<HealthAssistantProps> = ({
   vitalsContext,
   onNavigateBreathing,
 }) => {
+  const [geminiKey, setGeminiKey] = useState<string>(() => {
+    return cleanGeminiKey(localStorage.getItem('vitallens_gemini_key') || '');
+  });
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem('vitallens_chat_history');
     if (saved) {
@@ -35,9 +47,8 @@ export const HealthAssistant: React.FC<HealthAssistantProps> = ({
     }
 
     const initialText = vitalsContext && vitalsContext.heartRate
-      ? `I've attached your latest reading: **${vitalsContext.heartRate} BPM**, **${vitalsContext.spo2 ?? 98}% SpO2**, and **${vitalsContext.systolicBp ?? 118}/${vitalsContext.diastolicBp ?? 76} mmHg**.
-How can I help you understand these vitals?`
-      : `Hello! I can help explain your vital sign readings, normal ranges, or heart rate variability. What would you like to know?`;
+      ? `I've attached your latest reading: **${vitalsContext.heartRate} BPM**, **${vitalsContext.spo2 ?? 98}% SpO2**, and **${vitalsContext.systolicBp ?? 118}/${vitalsContext.diastolicBp ?? 76} mmHg**.\n\nHow can I help you understand these vitals?`
+      : `Hello! I can help explain your vital sign readings, optimal heart rate ranges, or heart rate variability (HRV). What would you like to know?`;
 
     return [
       {
@@ -47,8 +58,8 @@ How can I help you understand these vitals?`
         timestamp: Date.now(),
         triageLevel: 'info',
         suggestedActions: vitalsContext?.heartRate
-          ? ['Are my vitals normal?', 'How to improve HRV?', 'What does SpO2 mean?']
-          : ['Normal vital ranges', 'How camera PPG works', 'What is HRV?'],
+          ? ['What heart rate is optimal?', 'Are my vitals normal?', 'How to improve HRV?']
+          : ['What heart rate is optimal?', 'Standard normal vitals', 'How camera PPG works'],
       },
     ];
   });
@@ -56,10 +67,17 @@ How can I help you understand these vitals?`
   const [inputQuery, setInputQuery] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Key Modal States
   const [showKeyModal, setShowKeyModal] = useState(false);
-  const [geminiKey, setGeminiKey] = useState<string>(() => {
-    return localStorage.getItem('vitallens_gemini_key') || '';
-  });
+  const [modalKeyInput, setModalKeyInput] = useState('');
+  const [testState, setTestState] = useState<{
+    testing: boolean;
+    success?: boolean;
+    model?: string;
+    error?: string;
+    latencyMs?: number;
+  }>({ testing: false });
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -73,13 +91,23 @@ How can I help you understand these vitals?`
     } catch {}
   }, [messages]);
 
+  const handleOpenKeyModal = () => {
+    const current = cleanGeminiKey(localStorage.getItem('vitallens_gemini_key') || geminiKey);
+    setModalKeyInput(current);
+    setTestState({ testing: false });
+    setShowKeyModal(true);
+  };
+
   const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend || inputQuery).trim();
     if (!query) return;
 
     triggerHaptic('light');
 
-    if (query.toLowerCase().includes('open guided breathing') || query.toLowerCase().includes('start coherent breathing')) {
+    if (
+      query.toLowerCase().includes('open guided breathing') ||
+      query.toLowerCase().includes('start coherent breathing')
+    ) {
       if (onNavigateBreathing) {
         onNavigateBreathing();
         return;
@@ -98,7 +126,8 @@ How can I help you understand these vitals?`
     setIsTyping(true);
 
     try {
-      const response = await getBotResponse(query, vitalsContext, geminiKey);
+      const activeKey = cleanGeminiKey(geminiKey || localStorage.getItem('vitallens_gemini_key') || '');
+      const response = await getBotResponse(query, vitalsContext, activeKey, messages);
       setMessages((prev) => [...prev, response]);
       triggerHaptic('medium');
     } catch {
@@ -107,7 +136,7 @@ How can I help you understand these vitals?`
         {
           id: 'msg-err-' + Date.now(),
           sender: 'assistant',
-          text: 'Encountered temporary processing constraint. Please retry query.',
+          text: 'Encountered temporary processing constraint. Please retry your query.',
           timestamp: Date.now(),
           triageLevel: 'info',
         },
@@ -124,9 +153,14 @@ How can I help you understand these vitals?`
         {
           id: 'msg-init-new',
           sender: 'assistant',
-          text: 'Conversation reset. Enter a query regarding your vitals.',
+          text: 'Conversation reset. Ask any question regarding your heart rate, vitals, or recovery.',
           timestamp: Date.now(),
           triageLevel: 'info',
+          suggestedActions: [
+            'What heart rate is optimal?',
+            'Analyze my latest scan',
+            'What does HRV mean?',
+          ],
         },
       ]);
       triggerHaptic('light');
@@ -134,16 +168,61 @@ How can I help you understand these vitals?`
   };
 
   const handleCopyMessage = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
+    // Strip markdown formatting before copying to clipboard
+    const plainText = text.replace(/\*\*/g, '').replace(/^#{1,4}\s+/gm, '');
+    navigator.clipboard.writeText(plainText);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSaveGeminiKey = (key: string) => {
-    setGeminiKey(key.trim());
-    localStorage.setItem('vitallens_gemini_key', key.trim());
+  const handleTestKeyConnection = async () => {
+    const candidate = cleanGeminiKey(modalKeyInput);
+    if (!candidate || candidate.length < 10) {
+      setTestState({
+        testing: false,
+        success: false,
+        error: 'Please enter a valid Gemini API key (starts with AIzaSy...).',
+      });
+      return;
+    }
+
+    setTestState({ testing: true });
+    triggerHaptic('light');
+
+    const result = await validateGeminiKey(candidate);
+    setTestState({
+      testing: false,
+      success: result.success,
+      model: result.model,
+      error: result.error,
+      latencyMs: result.latencyMs,
+    });
+
+    if (result.success) {
+      triggerHaptic('success');
+    } else {
+      triggerHaptic('warning');
+    }
+  };
+
+  const handleSaveGeminiKey = () => {
+    const cleaned = cleanGeminiKey(modalKeyInput);
+    setGeminiKey(cleaned);
+    if (cleaned) {
+      localStorage.setItem('vitallens_gemini_key', cleaned);
+    } else {
+      localStorage.removeItem('vitallens_gemini_key');
+    }
     setShowKeyModal(false);
     triggerHaptic('medium');
+  };
+
+  const handleRemoveKey = () => {
+    setGeminiKey('');
+    setModalKeyInput('');
+    localStorage.removeItem('vitallens_gemini_key');
+    setShowKeyModal(false);
+    triggerHaptic('light');
   };
 
   return (
@@ -166,17 +245,28 @@ How can I help you understand these vitals?`
               <h2 className="text-xs font-semibold text-[var(--text-primary)]">
                 Health Assistant
               </h2>
-              <span className="text-[10px] text-[var(--text-secondary)] font-mono">
-                {geminiKey ? 'Gemini AI' : 'Clinical Q&A'}
-              </span>
+              <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                {geminiKey ? (
+                  <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Gemini AI Active
+                  </span>
+                ) : (
+                  <span className="text-[var(--text-secondary)]">Clinical Q&A (Offline)</span>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setShowKeyModal(true)}
-            className="p-2 rounded-lg bg-[var(--bg-surface-subtle)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+            onClick={handleOpenKeyModal}
+            className={`p-2 rounded-lg border transition-colors cursor-pointer flex items-center gap-1 text-xs ${
+              geminiKey
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600'
+                : 'bg-[var(--bg-surface-subtle)] border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
             title="Configure Gemini API Key"
             aria-label="API Settings"
           >
@@ -230,7 +320,7 @@ How can I help you understand these vitals?`
 
               {/* Message Bubble */}
               <div
-                className={`relative max-w-[85%] sm:max-w-md p-3.5 text-xs leading-relaxed ${
+                className={`relative max-w-[88%] sm:max-w-md p-3.5 text-xs leading-relaxed ${
                   isUser
                     ? 'bg-[var(--teal-primary)] text-white rounded-2xl rounded-tr-xs shadow-xs'
                     : 'clinical-card text-[var(--text-primary)] rounded-2xl rounded-tl-xs'
@@ -257,10 +347,16 @@ How can I help you understand these vitals?`
                   </div>
                 )}
 
-                {/* Text representation */}
-                <div className="space-y-1.5 whitespace-pre-wrap font-sans text-xs">
-                  {msg.text}
-                </div>
+                {/* Formatted Text Component: renders headings, lists, bold without any raw ** or artifacts */}
+                <ChatFormattedText text={msg.text} isUser={isUser} />
+
+                {/* Context badge if present */}
+                {msg.vitalsContextSnippet && !isUser && (
+                  <div className="flex items-center gap-1 text-[10px] text-[var(--teal-primary)] font-mono mt-2 pt-1 border-t border-[var(--border-color)]/60">
+                    <Sparkles className="w-3 h-3 stroke-[2] shrink-0" />
+                    <span>{msg.vitalsContextSnippet}</span>
+                  </div>
+                )}
 
                 {/* Suggested Action Chips */}
                 {msg.suggestedActions && msg.suggestedActions.length > 0 && (
@@ -278,17 +374,23 @@ How can I help you understand these vitals?`
                 )}
 
                 {/* Footer time & copy button */}
-                <div className={`flex items-center justify-between mt-2 pt-1 text-[10px] font-mono ${
-                  isUser ? 'text-white/80' : 'text-[var(--text-muted)]'
-                }`}>
+                <div
+                  className={`flex items-center justify-between mt-2 pt-1 text-[10px] font-mono ${
+                    isUser ? 'text-white/80' : 'text-[var(--text-muted)]'
+                  }`}
+                >
                   <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   {!isUser && (
                     <button
                       onClick={() => handleCopyMessage(msg.id, msg.text)}
                       className="hover:text-[var(--text-primary)] transition-colors cursor-pointer p-0.5"
-                      title="Copy response"
+                      title="Copy clean response"
                     >
-                      {copiedId === msg.id ? <Check className="w-3 h-3 text-[var(--status-success)]" /> : <Copy className="w-3 h-3" />}
+                      {copiedId === msg.id ? (
+                        <Check className="w-3 h-3 text-[var(--status-success)]" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
                     </button>
                   )}
                 </div>
@@ -304,7 +406,7 @@ How can I help you understand these vitals?`
             </div>
             <div className="clinical-card px-3 py-2 rounded-lg text-xs text-[var(--text-secondary)] font-mono flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--teal-primary)] animate-pulse" />
-              <span>Analyzing physiological telemetry...</span>
+              <span>{geminiKey ? 'Consulting Gemini AI clinician...' : 'Analyzing physiological telemetry...'}</span>
             </div>
           </div>
         )}
@@ -325,7 +427,7 @@ How can I help you understand these vitals?`
             type="text"
             value={inputQuery}
             onChange={(e) => setInputQuery(e.target.value)}
-            placeholder="Inquire on vital signs, intervals, or HRV..."
+            placeholder="Inquire on vital signs, intervals, or optimal heart rate..."
             className="flex-1 min-h-[44px] bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--teal-primary)] font-sans"
           />
           <button
@@ -352,39 +454,84 @@ How can I help you understand these vitals?`
                 <Key className="w-4 h-4 stroke-[2]" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Google Gemini Integration</h3>
-                <p className="text-[11px] text-[var(--text-secondary)] font-mono">Optional live LLM reasoning enhancement</p>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Google Gemini AI Integration</h3>
+                <p className="text-[11px] text-[var(--text-secondary)] font-mono">Live clinical LLM reasoning engine</p>
               </div>
             </div>
 
             <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-              VitalLens runs a complete deterministic clinical knowledge engine locally by default. Entering a Gemini key enables multi-turn semantic reasoning.
+              Entering your Gemini API key enables conversational reasoning, personalized vitals synthesis, and contextual cardiovascular guidance.
             </p>
 
-            <input
-              type="password"
-              defaultValue={geminiKey}
-              id="gemini-key-input"
-              placeholder="AIzaSy..."
-              className="w-full bg-[var(--bg-surface-subtle)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--teal-primary)] font-mono"
-            />
-
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                onClick={() => setShowKeyModal(false)}
-                className="clinical-btn-secondary min-h-[36px] px-3 text-xs font-mono"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const el = document.getElementById('gemini-key-input') as HTMLInputElement;
-                  handleSaveGeminiKey(el?.value || '');
+            <div className="space-y-2">
+              <input
+                type="password"
+                value={modalKeyInput}
+                onChange={(e) => {
+                  setModalKeyInput(e.target.value);
+                  setTestState({ testing: false });
                 }}
-                className="clinical-btn-primary min-h-[36px] px-3.5 text-xs font-mono font-medium"
-              >
-                Save Configuration
-              </button>
+                placeholder="AIzaSy..."
+                className="w-full bg-[var(--bg-surface-subtle)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--teal-primary)] font-mono"
+              />
+
+              {/* Real-time Connection Test Status */}
+              {testState.testing && (
+                <div className="p-2 rounded-lg bg-[var(--bg-surface-subtle)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] flex items-center gap-2 font-mono">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--teal-primary)]" />
+                  <span>Connecting to Google Gemini API...</span>
+                </div>
+              )}
+
+              {testState.success && (
+                <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-700 flex items-start gap-2 font-mono">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Gemini API Connected!</div>
+                    <div className="text-[11px] opacity-90">Model: {testState.model} ({testState.latencyMs}ms)</div>
+                  </div>
+                </div>
+              )}
+
+              {testState.error && (
+                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-700 flex items-start gap-2 font-mono">
+                  <XCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Connection Failed</div>
+                    <div className="text-[11px] opacity-90">{testState.error}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border-color)]">
+              <div>
+                {geminiKey ? (
+                  <button
+                    onClick={handleRemoveKey}
+                    className="text-xs text-[var(--status-alert)] hover:underline font-mono cursor-pointer"
+                  >
+                    Disconnect Key
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestKeyConnection}
+                  disabled={testState.testing || !modalKeyInput.trim()}
+                  className="clinical-btn-secondary min-h-[36px] px-3 text-xs font-mono"
+                >
+                  {testState.testing ? 'Testing...' : 'Test Key'}
+                </button>
+                <button
+                  onClick={handleSaveGeminiKey}
+                  className="clinical-btn-primary min-h-[36px] px-3.5 text-xs font-mono font-medium"
+                >
+                  Save Configuration
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -11,16 +11,52 @@ import {
   deleteRecordDB,
   clearAllRecordsDB,
 } from './vitalsDb';
+import type { VitalsRecord } from './vitalsDb';
+import {
+  saveRecordToSupabase,
+  deleteRecordFromSupabase,
+  fetchRecordsFromSupabase,
+} from './supabaseService';
+import { isSupabaseConfigured } from './supabaseClient';
 
 export type { VitalsRecord } from './vitalsDb';
 
 const STORAGE_KEY = 'vitallens_scan_history_v1';
 
-export async function fetchAllHistoryAsync() {
-  return await getAllRecordsDB();
+export async function fetchAllHistoryAsync(): Promise<VitalsRecord[]> {
+  const localRecords = await getAllRecordsDB();
+
+  // If external Supabase DB is configured, merge cloud records
+  if (isSupabaseConfigured()) {
+    try {
+      const remote = await fetchRecordsFromSupabase();
+      if (remote.data && remote.data.length > 0) {
+        const localMap = new Map(localRecords.map((r) => [r.id, r]));
+        let hasNew = false;
+        for (const rem of remote.data) {
+          if (!localMap.has(rem.id)) {
+            await saveRecordDB(rem);
+            localMap.set(rem.id, rem);
+            hasNew = true;
+          }
+        }
+        if (hasNew) {
+          const merged = Array.from(localMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        }
+      }
+    } catch {
+      // Offline or network issue, fallback to local records
+    }
+  }
+
+  return localRecords;
 }
 
-export function getScanHistory() {
+export function getScanHistory(): VitalsRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -30,18 +66,23 @@ export function getScanHistory() {
   }
 }
 
-export function saveScanRecord(record: any) {
-  // Dual save to IndexedDB & localStorage
-  saveRecordDB(record).catch(() => {});
-
-  const history = getScanHistory();
-  const newRecord = {
+export function saveScanRecord(record: any): VitalsRecord {
+  const newRecord: VitalsRecord = {
     ...record,
-    id: 'scan-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-    timestamp: Date.now(),
+    id: record.id || ('scan-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7)),
+    timestamp: record.timestamp || Date.now(),
   };
 
-  const updated = [newRecord, ...history];
+  // 1. Dual save to native on-device IndexedDB
+  saveRecordDB(newRecord).catch(() => {});
+
+  // 2. Asynchronously replicate to external Supabase PostgreSQL database
+  saveRecordToSupabase(newRecord).catch(() => {});
+
+  // 3. Fallback cache in localStorage
+  const history = getScanHistory();
+  const filtered = history.filter((item: any) => item.id !== newRecord.id);
+  const updated = [newRecord, ...filtered];
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   } catch {}
@@ -49,7 +90,11 @@ export function saveScanRecord(record: any) {
 }
 
 export function deleteScanRecord(id: string) {
+  // Delete from local IndexedDB
   deleteRecordDB(id).catch(() => {});
+
+  // Delete from external Supabase DB
+  deleteRecordFromSupabase(id).catch(() => {});
 
   const history = getScanHistory();
   const updated = history.filter((item: any) => item.id !== id);

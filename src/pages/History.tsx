@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { fetchAllHistoryAsync, getScanHistory } from '../lib/storage/historyStore';
 import type { VitalsRecord } from '../lib/storage/historyStore';
+import { isSupabaseConfigured } from '../lib/storage/supabaseClient';
 import { TrendChart } from '../components/history/TrendChart';
 import { HistoryList } from '../components/history/HistoryList';
 import { LifestyleHistoryView } from '../components/history/LifestyleHistoryView';
 import { ClinicalSummaryModal } from '../components/history/ClinicalSummaryModal';
-import { ArrowLeft, RefreshCw, Plus, FileText, Activity, Moon } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Plus, FileText, Activity, Moon, Cloud } from 'lucide-react';
 import { triggerHaptic } from '../lib/utils/haptics';
 
 interface HistoryProps {
@@ -55,9 +56,17 @@ export const History: React.FC<HistoryProps> = ({ onBack, onNewScan }) => {
             <ArrowLeft className="w-3.5 h-3.5 stroke-[2]" />
             <span>Dashboard</span>
           </button>
-          <h1 className="text-xl font-bold tracking-tight text-[var(--text-primary)]">
-            Health Records & Trends
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-[var(--text-primary)]">
+              Health Records & Trends
+            </h1>
+            {isSupabaseConfigured() && (
+              <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                <Cloud className="w-3 h-3 stroke-[2]" />
+                <span>Cloud Synced</span>
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
